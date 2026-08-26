@@ -1,7 +1,7 @@
 const API_BASE = import.meta.env.VITE_API_URL || (
   window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:4000/api/v1'
-    : 'https://restrovico-api-production.up.railway.app/api/v1'
+    : 'https://restrovico-api.up.railway.app/api/v1'
 );
 
 function getAuthHeader() {
@@ -45,8 +45,8 @@ async function request(endpoint, options = {}) {
 
 export const api = {
   setTokens(accessToken, refreshToken) {
-    if (accessToken) localStorage.setItem('access_token', accessToken);
-    if (refreshToken) localStorage.setItem('refresh_token', refreshToken);
+    if (accessToken) localStorage.getItem('access_token', accessToken);
+    if (refreshToken) localStorage.getItem('refresh_token', refreshToken);
   },
 
   clearTokens() {
