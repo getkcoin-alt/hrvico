@@ -1,3 +1,4 @@
+// RestroVico Production API Client - Cache-busting build v1.0.4
 const API_BASE = import.meta.env.VITE_API_URL || (
   window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:4000/api/v1'
