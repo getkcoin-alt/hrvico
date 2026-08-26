@@ -1,6 +1,4 @@
 import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
 import dotenv from 'dotenv';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -41,22 +39,23 @@ initDb();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// Configure Helmet for Cross-Origin REST API compatibility
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginOpenerPolicy: false
-}));
+// Trust Railway / Reverse Proxy for X-Forwarded-For headers
+app.set('trust proxy', 1);
 
-// Dynamic CORS configuration allowing credentials & browser requests
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, curl, postman)
-    if (!origin) return callback(null, true);
-    // Dynamically mirror request origin for valid CORS with credentials
-    return callback(null, origin);
-  },
-  credentials: true
-}));
+// Universal CORS & Preflight Middleware for REST API
+app.use((req, res, next) => {
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Request-ID');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Max-Age', '86400'); // 24-hour preflight cache
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
 
 app.use(express.json());
 
