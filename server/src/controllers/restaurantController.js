@@ -2,16 +2,16 @@ import { v4 as uuidv4 } from 'uuid';
 import db from '../db.js';
 import { recordAuditLog } from '../services/audit.js';
 
-function generateRestaurantCode() {
-  const countRow = db.prepare('SELECT COUNT(*) as count FROM restaurants').get();
-  const nextNum = (countRow ? countRow.count : 0) + 1;
+async function generateRestaurantCode() {
+  const countRow = await db.prepare('SELECT COUNT(*) as count FROM restaurants').get();
+  const nextNum = (countRow ? parseInt(countRow.count, 10) : 0) + 1;
   let code = `RV-R${String(nextNum).padStart(4, '0')}`;
 
-  let existing = db.prepare('SELECT id FROM restaurants WHERE restaurant_code = ?').get(code);
+  let existing = await db.prepare('SELECT id FROM restaurants WHERE restaurant_code = ?').get(code);
   let attempts = 1;
   while (existing) {
     code = `RV-R${String(nextNum + attempts).padStart(4, '0')}`;
-    existing = db.prepare('SELECT id FROM restaurants WHERE restaurant_code = ?').get(code);
+    existing = await db.prepare('SELECT id FROM restaurants WHERE restaurant_code = ?').get(code);
     attempts++;
   }
   return code;
@@ -40,12 +40,12 @@ export async function listRestaurants(req, res) {
 
     query += ' ORDER BY created_at DESC';
 
-    const restaurants = db.prepare(query).all(...params);
+    const restaurants = await db.prepare(query).all(...params);
 
-    const totalCount = db.prepare('SELECT COUNT(*) as c FROM restaurants WHERE tenant_id = ?').get(tenantId).c;
-    const activeCount = db.prepare("SELECT COUNT(*) as c FROM restaurants WHERE tenant_id = ? AND status = 'ACTIVE'").get(tenantId).c;
-    const inactiveCount = db.prepare("SELECT COUNT(*) as c FROM restaurants WHERE tenant_id = ? AND status = 'INACTIVE'").get(tenantId).c;
-    const archivedCount = db.prepare("SELECT COUNT(*) as c FROM restaurants WHERE tenant_id = ? AND status = 'ARCHIVED'").get(tenantId).c;
+    const totalCountRow = await db.prepare('SELECT COUNT(*) as c FROM restaurants WHERE tenant_id = ?').get(tenantId);
+    const activeCountRow = await db.prepare("SELECT COUNT(*) as c FROM restaurants WHERE tenant_id = ? AND status = 'ACTIVE'").get(tenantId);
+    const inactiveCountRow = await db.prepare("SELECT COUNT(*) as c FROM restaurants WHERE tenant_id = ? AND status = 'INACTIVE'").get(tenantId);
+    const archivedCountRow = await db.prepare("SELECT COUNT(*) as c FROM restaurants WHERE tenant_id = ? AND status = 'ARCHIVED'").get(tenantId);
 
     return res.json({
       success: true,
@@ -53,10 +53,10 @@ export async function listRestaurants(req, res) {
       data: {
         restaurants,
         summary: {
-          total: totalCount,
-          active: activeCount,
-          inactive: inactiveCount,
-          archived: archivedCount
+          total: totalCountRow ? parseInt(totalCountRow.c, 10) : 0,
+          active: activeCountRow ? parseInt(activeCountRow.c, 10) : 0,
+          inactive: inactiveCountRow ? parseInt(inactiveCountRow.c, 10) : 0,
+          archived: archivedCountRow ? parseInt(archivedCountRow.c, 10) : 0
         }
       },
       request_id: req.requestId
@@ -157,9 +157,9 @@ export async function createRestaurant(req, res) {
     }
 
     const id = uuidv4();
-    const restaurantCode = generateRestaurantCode();
+    const restaurantCode = await generateRestaurantCode();
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO restaurants (
         id, tenant_id, restaurant_code, name, business_type, mobile, email,
         address_line, city, state, country, pincode, gstin, fssai_no,
@@ -171,7 +171,7 @@ export async function createRestaurant(req, res) {
       openingTime || null, closingTime || null, 'ACTIVE', req.user.id, req.user.id
     );
 
-    recordAuditLog({
+    await recordAuditLog({
       tenantId,
       userId: req.user.id,
       action: 'Restaurant Create',
@@ -181,7 +181,7 @@ export async function createRestaurant(req, res) {
       ip: req.ip
     });
 
-    const newRecord = db.prepare('SELECT * FROM restaurants WHERE id = ?').get(id);
+    const newRecord = await db.prepare('SELECT * FROM restaurants WHERE id = ?').get(id);
 
     return res.status(201).json({
       success: true,
@@ -205,7 +205,7 @@ export async function getRestaurantById(req, res) {
     const { id } = req.params;
     const tenantId = req.user.tenant_id;
 
-    const restaurant = db.prepare('SELECT * FROM restaurants WHERE id = ? AND tenant_id = ?').get(id, tenantId);
+    const restaurant = await db.prepare('SELECT * FROM restaurants WHERE id = ? AND tenant_id = ?').get(id, tenantId);
 
     if (!restaurant) {
       return res.status(404).json({
@@ -238,7 +238,7 @@ export async function updateRestaurant(req, res) {
     const { id } = req.params;
     const tenantId = req.user.tenant_id;
 
-    const existing = db.prepare('SELECT * FROM restaurants WHERE id = ? AND tenant_id = ?').get(id, tenantId);
+    const existing = await db.prepare('SELECT * FROM restaurants WHERE id = ? AND tenant_id = ?').get(id, tenantId);
 
     if (!existing) {
       return res.status(404).json({
@@ -373,9 +373,9 @@ export async function updateRestaurant(req, res) {
 
     params.push(id, tenantId);
 
-    db.prepare(`UPDATE restaurants SET ${updates.join(', ')} WHERE id = ? AND tenant_id = ?`).run(...params);
+    await db.prepare(`UPDATE restaurants SET ${updates.join(', ')} WHERE id = ? AND tenant_id = ?`).run(...params);
 
-    recordAuditLog({
+    await recordAuditLog({
       tenantId,
       userId: req.user.id,
       action: 'Restaurant Update',
@@ -385,7 +385,7 @@ export async function updateRestaurant(req, res) {
       ip: req.ip
     });
 
-    const updatedRecord = db.prepare('SELECT * FROM restaurants WHERE id = ?').get(id);
+    const updatedRecord = await db.prepare('SELECT * FROM restaurants WHERE id = ?').get(id);
 
     return res.json({
       success: true,
@@ -420,7 +420,7 @@ export async function updateRestaurantStatus(req, res) {
       });
     }
 
-    const existing = db.prepare('SELECT status FROM restaurants WHERE id = ? AND tenant_id = ?').get(id, tenantId);
+    const existing = await db.prepare('SELECT status FROM restaurants WHERE id = ? AND tenant_id = ?').get(id, tenantId);
 
     if (!existing) {
       return res.status(404).json({
@@ -434,13 +434,13 @@ export async function updateRestaurantStatus(req, res) {
     const newStatus = status.toUpperCase();
     const oldStatus = existing.status;
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE restaurants
       SET status = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND tenant_id = ?
     `).run(newStatus, req.user.id, id, tenantId);
 
-    recordAuditLog({
+    await recordAuditLog({
       tenantId,
       userId: req.user.id,
       action: 'Restaurant Status Change',
@@ -450,7 +450,7 @@ export async function updateRestaurantStatus(req, res) {
       ip: req.ip
     });
 
-    const updatedRecord = db.prepare('SELECT * FROM restaurants WHERE id = ?').get(id);
+    const updatedRecord = await db.prepare('SELECT * FROM restaurants WHERE id = ?').get(id);
 
     return res.json({
       success: true,

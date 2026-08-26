@@ -43,10 +43,18 @@ const PORT = process.env.PORT || 4000;
 
 // Security & Middleware
 app.use(helmet());
+
+// Dynamic CORS configuration allowing credentials & browser requests
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, postman)
+    if (!origin) return callback(null, true);
+    // Dynamically mirror request origin for valid CORS with credentials
+    return callback(null, origin);
+  },
   credentials: true
 }));
+
 app.use(express.json());
 
 // Request correlation ID assignment
@@ -101,7 +109,7 @@ app.use((req, res) => {
   });
 });
 
-// Global Error Handler (Section 12: friendly messages, no raw stack trace to user)
+// Global Error Handler
 app.use((err, req, res, _next) => {
   console.error('Unhandled error:', err);
   res.status(500).json({

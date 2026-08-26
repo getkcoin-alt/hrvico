@@ -27,14 +27,15 @@ function validatePassword(password) {
 
 export async function getProfile(req, res) {
   try {
-    const user = db.prepare(`
+    const user = await db.prepare(`
       SELECT u.id, u.tenant_id, u.role, u.full_name, u.email, u.mobile, u.status, u.created_at, t.name as tenant_name
       FROM users u
       LEFT JOIN tenants t ON u.tenant_id = t.id
       WHERE u.id = ?
     `).get(req.user.id);
 
-    const restaurantCount = db.prepare('SELECT COUNT(*) as count FROM restaurants WHERE tenant_id = ?').get(req.user.tenant_id).count;
+    const restaurantCountRow = await db.prepare('SELECT COUNT(*) as count FROM restaurants WHERE tenant_id = ?').get(req.user.tenant_id);
+    const restaurantCount = restaurantCountRow ? parseInt(restaurantCountRow.count, 10) : 0;
 
     return res.json({
       success: true,
@@ -96,7 +97,7 @@ export async function updateProfile(req, res) {
         });
       }
 
-      const existingMobile = db.prepare('SELECT id FROM users WHERE mobile = ? AND id != ?').get(normMobile, req.user.id);
+      const existingMobile = await db.prepare('SELECT id FROM users WHERE mobile = ? AND id != ?').get(normMobile, req.user.id);
       if (existingMobile) {
         return res.status(422).json({
           success: false,
@@ -123,9 +124,9 @@ export async function updateProfile(req, res) {
     updates.push('updated_at = CURRENT_TIMESTAMP');
     params.push(req.user.id);
 
-    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
-    recordAuditLog({
+    await recordAuditLog({
       tenantId: req.user.tenant_id,
       userId: req.user.id,
       action: 'Profile Update',
@@ -135,7 +136,7 @@ export async function updateProfile(req, res) {
       ip: req.ip
     });
 
-    const updatedUser = db.prepare('SELECT id, full_name, email, mobile, status FROM users WHERE id = ?').get(req.user.id);
+    const updatedUser = await db.prepare('SELECT id, full_name, email, mobile, status FROM users WHERE id = ?').get(req.user.id);
 
     return res.json({
       success: true,
@@ -191,7 +192,7 @@ export async function changePassword(req, res) {
       });
     }
 
-    const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
+    const user = await db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
     const validCurrent = await bcrypt.compare(currentPassword, user.password_hash);
 
     if (!validCurrent) {
@@ -204,9 +205,9 @@ export async function changePassword(req, res) {
     }
 
     const newHash = await bcrypt.hash(newPassword, 10);
-    db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newHash, req.user.id);
+    await db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newHash, req.user.id);
 
-    recordAuditLog({
+    await recordAuditLog({
       tenantId: req.user.tenant_id,
       userId: req.user.id,
       action: 'Change Password',

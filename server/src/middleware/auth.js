@@ -3,7 +3,7 @@ import db from '../db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'restrovico-dev-jwt-secret-key-2026';
 
-export function authenticate(req, res, next) {
+export async function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
   let token = null;
 
@@ -26,7 +26,7 @@ export function authenticate(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
     
     // Fetch fresh user state from DB
-    const user = db.prepare(`
+    const user = await db.prepare(`
       SELECT id, tenant_id, role, full_name, email, mobile, status
       FROM users WHERE id = ?
     `).get(decoded.userId);

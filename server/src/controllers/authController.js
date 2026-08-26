@@ -95,7 +95,7 @@ export async function signup(req, res) {
     }
 
     // Check duplicate email / mobile
-    const existingEmail = db.prepare('SELECT id FROM users WHERE email = ?').get(normEmail);
+    const existingEmail = await db.prepare('SELECT id FROM users WHERE email = ?').get(normEmail);
     if (existingEmail) {
       return res.status(422).json({
         success: false,
@@ -105,7 +105,7 @@ export async function signup(req, res) {
       });
     }
 
-    const existingMobile = db.prepare('SELECT id FROM users WHERE mobile = ?').get(normMobile);
+    const existingMobile = await db.prepare('SELECT id FROM users WHERE mobile = ?').get(normMobile);
     if (existingMobile) {
       return res.status(422).json({
         success: false,
@@ -119,32 +119,27 @@ export async function signup(req, res) {
     const userId = uuidv4();
     const passwordHash = await bcrypt.hash(password, 10);
     const tenantName = `${fullName.trim()}'s Restaurant Group`;
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
-    // Transaction for Tenant + User creation
-    const createTx = db.transaction(() => {
-      db.prepare('INSERT INTO tenants (id, name, status) VALUES (?, ?, ?)').run(tenantId, tenantName, 'ACTIVE');
+    const createTx = db.transaction(async () => {
+      await db.prepare('INSERT INTO tenants (id, name, status) VALUES (?, ?, ?)').run(tenantId, tenantName, 'ACTIVE');
       
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO users (id, tenant_id, role, full_name, email, mobile, password_hash, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(userId, tenantId, 'OWNER', fullName.trim(), normEmail, normMobile, passwordHash, 'PENDING_VERIFICATION');
 
-      // Create Verification token
-      const rawToken = crypto.randomBytes(32).toString('hex');
-      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-      const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO email_verifications (id, user_id, token_hash, expires_at)
         VALUES (?, ?, ?, ?)
       `).run(uuidv4(), userId, tokenHash, expiresAt);
-
-      return rawToken;
     });
 
-    const rawToken = createTx();
+    await createTx();
 
-    recordAuditLog({
+    await recordAuditLog({
       tenantId,
       userId,
       action: 'Signup',
@@ -192,7 +187,7 @@ export async function verifyEmail(req, res) {
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-    const record = db.prepare(`
+    const record = await db.prepare(`
       SELECT * FROM email_verifications
       WHERE token_hash = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP
     `).get(tokenHash);
@@ -206,25 +201,25 @@ export async function verifyEmail(req, res) {
       });
     }
 
-    const verifyTx = db.transaction(() => {
-      db.prepare('UPDATE email_verifications SET used_at = CURRENT_TIMESTAMP WHERE id = ?').run(record.id);
-      db.prepare(`
+    const verifyTx = db.transaction(async () => {
+      await db.prepare('UPDATE email_verifications SET used_at = CURRENT_TIMESTAMP WHERE id = ?').run(record.id);
+      await db.prepare(`
         UPDATE users
         SET email_verified_at = CURRENT_TIMESTAMP, status = 'ACTIVE'
         WHERE id = ?
       `).run(record.user_id);
     });
 
-    verifyTx();
+    await verifyTx();
 
-    const user = db.prepare('SELECT id, tenant_id, full_name, email FROM users WHERE id = ?').get(record.user_id);
+    const user = await db.prepare('SELECT id, tenant_id, full_name, email FROM users WHERE id = ?').get(record.user_id);
 
-    recordAuditLog({
-      tenantId: user.tenant_id,
-      userId: user.id,
+    await recordAuditLog({
+      tenantId: user ? user.tenant_id : null,
+      userId: user ? user.id : null,
       action: 'Email Verify',
       entityType: 'User',
-      entityId: user.id,
+      entityId: user ? user.id : null,
       metadata: { result: 'SUCCESS' },
       ip: req.ip
     });
@@ -256,13 +251,13 @@ export async function resendVerification(req, res) {
     const normEmail = normalizeEmail(email);
 
     if (normEmail) {
-      const user = db.prepare('SELECT * FROM users WHERE email = ? AND status = ?').get(normEmail, 'PENDING_VERIFICATION');
+      const user = await db.prepare('SELECT * FROM users WHERE email = ? AND status = ?').get(normEmail, 'PENDING_VERIFICATION');
       if (user) {
         const rawToken = crypto.randomBytes(32).toString('hex');
         const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
         const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO email_verifications (id, user_id, token_hash, expires_at)
           VALUES (?, ?, ?, ?)
         `).run(uuidv4(), user.id, tokenHash, expiresAt);
@@ -305,13 +300,13 @@ export async function login(req, res) {
     const isEmailInput = normInput.includes('@');
     const lookupField = isEmailInput ? normalizeEmail(normInput) : normalizeMobile(normInput);
 
-    const user = db.prepare(`
+    const user = await db.prepare(`
       SELECT * FROM users
       WHERE ${isEmailInput ? 'email' : 'mobile'} = ?
     `).get(lookupField);
 
     if (!user) {
-      recordAuditLog({
+      await recordAuditLog({
         action: 'Login Failure',
         metadata: { identifier: normInput, reason: 'User not found' },
         ip: req.ip
@@ -326,7 +321,7 @@ export async function login(req, res) {
 
     const validPass = await bcrypt.compare(password, user.password_hash);
     if (!validPass) {
-      recordAuditLog({
+      await recordAuditLog({
         tenantId: user.tenant_id,
         userId: user.id,
         action: 'Login Failure',
@@ -359,7 +354,7 @@ export async function login(req, res) {
       });
     }
 
-    db.prepare('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+    await db.prepare('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -367,12 +362,12 @@ export async function login(req, res) {
     const refreshHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
     const sessionExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO auth_sessions (id, user_id, token_hash, device_info, expires_at)
       VALUES (?, ?, ?, ?, ?)
     `).run(uuidv4(), user.id, refreshHash, req.headers['user-agent'] || 'unknown', sessionExpiresAt);
 
-    recordAuditLog({
+    await recordAuditLog({
       tenantId: user.tenant_id,
       userId: user.id,
       action: 'Login Success',
@@ -382,8 +377,9 @@ export async function login(req, res) {
       ip: req.ip
     });
 
-    const tenant = db.prepare('SELECT id, name FROM tenants WHERE id = ?').get(user.tenant_id);
-    const restaurantCount = db.prepare('SELECT COUNT(*) as count FROM restaurants WHERE tenant_id = ?').get(user.tenant_id).count;
+    const tenant = await db.prepare('SELECT id, name FROM tenants WHERE id = ?').get(user.tenant_id);
+    const restaurantCountRow = await db.prepare('SELECT COUNT(*) as count FROM restaurants WHERE tenant_id = ?').get(user.tenant_id);
+    const restaurantCount = restaurantCountRow ? parseInt(restaurantCountRow.count, 10) : 0;
 
     return res.json({
       success: true,
@@ -429,7 +425,7 @@ export async function refresh(req, res) {
     }
 
     const refreshHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-    const session = db.prepare(`
+    const session = await db.prepare(`
       SELECT * FROM auth_sessions
       WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP
     `).get(refreshHash);
@@ -443,7 +439,7 @@ export async function refresh(req, res) {
       });
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(session.user_id);
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(session.user_id);
     if (!user || user.status !== 'ACTIVE') {
       return res.status(401).json({
         success: false,
@@ -477,11 +473,11 @@ export async function logout(req, res) {
     const { refreshToken } = req.body;
     if (refreshToken) {
       const refreshHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-      db.prepare('UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = ?').run(refreshHash);
+      await db.prepare('UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = ?').run(refreshHash);
     }
 
     if (req.user) {
-      recordAuditLog({
+      await recordAuditLog({
         tenantId: req.user.tenant_id,
         userId: req.user.id,
         action: 'Logout',
@@ -515,18 +511,18 @@ export async function forgotPassword(req, res) {
     const normEmail = normalizeEmail(email);
 
     if (normEmail) {
-      const user = db.prepare('SELECT * FROM users WHERE email = ? AND status = ?').get(normEmail, 'ACTIVE');
+      const user = await db.prepare('SELECT * FROM users WHERE email = ? AND status = ?').get(normEmail, 'ACTIVE');
       if (user) {
         const rawToken = crypto.randomBytes(32).toString('hex');
         const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
         const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
 
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO password_resets (id, user_id, token_hash, expires_at)
           VALUES (?, ?, ?, ?)
         `).run(uuidv4(), user.id, tokenHash, expiresAt);
 
-        recordAuditLog({
+        await recordAuditLog({
           tenantId: user.tenant_id,
           userId: user.id,
           action: 'Password Reset Request',
@@ -540,7 +536,6 @@ export async function forgotPassword(req, res) {
       }
     }
 
-    // Always return neutral message per spec PWD-02 / Section 4.4
     return res.json({
       success: true,
       message: 'If an account exists, reset instructions have been sent.',
@@ -591,7 +586,7 @@ export async function resetPassword(req, res) {
     }
 
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    const resetRecord = db.prepare(`
+    const resetRecord = await db.prepare(`
       SELECT * FROM password_resets
       WHERE token_hash = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP
     `).get(tokenHash);
@@ -607,18 +602,17 @@ export async function resetPassword(req, res) {
 
     const newHash = await bcrypt.hash(newPassword, 10);
 
-    const resetTx = db.transaction(() => {
-      db.prepare('UPDATE password_resets SET used_at = CURRENT_TIMESTAMP WHERE id = ?').run(resetRecord.id);
-      db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newHash, resetRecord.user_id);
-      // Revoke all active sessions
-      db.prepare('UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(resetRecord.user_id);
+    const resetTx = db.transaction(async () => {
+      await db.prepare('UPDATE password_resets SET used_at = CURRENT_TIMESTAMP WHERE id = ?').run(resetRecord.id);
+      await db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newHash, resetRecord.user_id);
+      await db.prepare('UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ?').run(resetRecord.user_id);
     });
 
-    resetTx();
+    await resetTx();
 
-    const user = db.prepare('SELECT id, tenant_id FROM users WHERE id = ?').get(resetRecord.user_id);
+    const user = await db.prepare('SELECT id, tenant_id FROM users WHERE id = ?').get(resetRecord.user_id);
 
-    recordAuditLog({
+    await recordAuditLog({
       tenantId: user ? user.tenant_id : null,
       userId: resetRecord.user_id,
       action: 'Password Reset Success',
