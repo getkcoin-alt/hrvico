@@ -548,12 +548,15 @@ export async function forgotPassword(req, res) {
       ip: req.ip
     });
 
-    await sendPasswordResetEmail({ email: user.email, name: user.full_name, token: rawToken });
+    const { resetLink, previewUrl } = await sendPasswordResetEmail({ email: user.email, name: user.full_name, token: rawToken });
 
     return res.json({
       success: true,
       message: `Password reset instructions have been sent to ${user.email}.`,
-      data: null,
+      data: {
+        previewUrl: previewUrl || undefined,
+        resetLink: previewUrl ? resetLink : undefined
+      },
       request_id: req.requestId
     });
   } catch (err) {

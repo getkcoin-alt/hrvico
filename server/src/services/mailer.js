@@ -2,9 +2,7 @@ import nodemailer from 'nodemailer';
 
 const APP_URL = process.env.APP_URL || 'https://restrovico.vercel.app';
 
-let testTransporter = null;
-
-async function getTransporter() {
+function getTransporter() {
   if (process.env.SMTP_HOST) {
     return nodemailer.createTransport({
       host: process.env.SMTP_HOST,
@@ -16,26 +14,7 @@ async function getTransporter() {
       } : undefined
     });
   }
-
-  if (!testTransporter) {
-    try {
-      const testAccount = await nodemailer.createTestAccount();
-      testTransporter = nodemailer.createTransport({
-        host: 'smtp.ethereal.email',
-        port: 587,
-        secure: false,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass
-        }
-      });
-      console.log(`[Mailer] Created Ethereal test SMTP account: ${testAccount.user}`);
-    } catch (e) {
-      console.log('[Mailer] Ethereal fallback unavailable, logging emails to console.');
-    }
-  }
-
-  return testTransporter;
+  return null;
 }
 
 export async function sendVerificationEmail({ email, name, token }) {
@@ -63,17 +42,20 @@ export async function sendVerificationEmail({ email, name, token }) {
   console.log(`Link: ${verifyLink}`);
   console.log(`=========================================================\n`);
 
+  let previewUrl = null;
   try {
-    const transporter = await getTransporter();
+    const transporter = getTransporter();
     if (transporter) {
       const info = await transporter.sendMail(mailOptions);
-      if (nodemailer.getTestMessageUrl(info)) {
-        console.log(`[Mailer] View test email online: ${nodemailer.getTestMessageUrl(info)}`);
+      previewUrl = nodemailer.getTestMessageUrl(info) || null;
+      if (previewUrl) {
+        console.log(`[Mailer] View verification email online: ${previewUrl}`);
       }
     }
   } catch (err) {
     console.error('[Mailer] Email sending error:', err.message);
   }
+  return { verifyLink, previewUrl };
 }
 
 export async function sendPasswordResetEmail({ email, name, token }) {
@@ -102,15 +84,18 @@ export async function sendPasswordResetEmail({ email, name, token }) {
   console.log(`Link: ${resetLink}`);
   console.log(`=====================================================\n`);
 
+  let previewUrl = null;
   try {
-    const transporter = await getTransporter();
+    const transporter = getTransporter();
     if (transporter) {
       const info = await transporter.sendMail(mailOptions);
-      if (nodemailer.getTestMessageUrl(info)) {
-        console.log(`[Mailer] View test reset email online: ${nodemailer.getTestMessageUrl(info)}`);
+      previewUrl = nodemailer.getTestMessageUrl(info) || null;
+      if (previewUrl) {
+        console.log(`[Mailer] View reset email online: ${previewUrl}`);
       }
     }
   } catch (err) {
     console.error('[Mailer] Password reset email error:', err.message);
   }
+  return { resetLink, previewUrl };
 }
