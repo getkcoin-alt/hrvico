@@ -1,16 +1,42 @@
 import nodemailer from 'nodemailer';
 
-const APP_URL = process.env.APP_URL || 'http://localhost:5173';
+const APP_URL = process.env.APP_URL || 'https://restrovico.vercel.app';
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'localhost',
-  port: parseInt(process.env.SMTP_PORT || '587', 10),
-  secure: process.env.SMTP_SECURE === 'true',
-  auth: process.env.SMTP_USER ? {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  } : undefined
-});
+let testTransporter = null;
+
+async function getTransporter() {
+  if (process.env.SMTP_HOST) {
+    return nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '587', 10),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: process.env.SMTP_USER ? {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+      } : undefined
+    });
+  }
+
+  if (!testTransporter) {
+    try {
+      const testAccount = await nodemailer.createTestAccount();
+      testTransporter = nodemailer.createTransport({
+        host: 'smtp.ethereal.email',
+        port: 587,
+        secure: false,
+        auth: {
+          user: testAccount.user,
+          pass: testAccount.pass
+        }
+      });
+      console.log(`[Mailer] Created Ethereal test SMTP account: ${testAccount.user}`);
+    } catch (e) {
+      console.log('[Mailer] Ethereal fallback unavailable, logging emails to console.');
+    }
+  }
+
+  return testTransporter;
+}
 
 export async function sendVerificationEmail({ email, name, token }) {
   const verifyLink = `${APP_URL}/verify-email?token=${token}`;
@@ -37,12 +63,16 @@ export async function sendVerificationEmail({ email, name, token }) {
   console.log(`Link: ${verifyLink}`);
   console.log(`=========================================================\n`);
 
-  if (process.env.SMTP_HOST) {
-    try {
-      await transporter.sendMail(mailOptions);
-    } catch (err) {
-      console.error('SMTP sending failed, logged to console:', err.message);
+  try {
+    const transporter = await getTransporter();
+    if (transporter) {
+      const info = await transporter.sendMail(mailOptions);
+      if (nodemailer.getTestMessageUrl(info)) {
+        console.log(`[Mailer] View test email online: ${nodemailer.getTestMessageUrl(info)}`);
+      }
     }
+  } catch (err) {
+    console.error('[Mailer] Email sending error:', err.message);
   }
 }
 
@@ -72,11 +102,15 @@ export async function sendPasswordResetEmail({ email, name, token }) {
   console.log(`Link: ${resetLink}`);
   console.log(`=====================================================\n`);
 
-  if (process.env.SMTP_HOST) {
-    try {
-      await transporter.sendMail(mailOptions);
-    } catch (err) {
-      console.error('SMTP sending failed, logged to console:', err.message);
+  try {
+    const transporter = await getTransporter();
+    if (transporter) {
+      const info = await transporter.sendMail(mailOptions);
+      if (nodemailer.getTestMessageUrl(info)) {
+        console.log(`[Mailer] View test reset email online: ${nodemailer.getTestMessageUrl(info)}`);
+      }
     }
+  } catch (err) {
+    console.error('[Mailer] Password reset email error:', err.message);
   }
 }

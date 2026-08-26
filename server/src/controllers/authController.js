@@ -510,35 +510,49 @@ export async function forgotPassword(req, res) {
     const { email } = req.body;
     const normEmail = normalizeEmail(email);
 
-    if (normEmail) {
-      const user = await db.prepare('SELECT * FROM users WHERE email = ? AND status = ?').get(normEmail, 'ACTIVE');
-      if (user) {
-        const rawToken = crypto.randomBytes(32).toString('hex');
-        const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-        const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-
-        await db.prepare(`
-          INSERT INTO password_resets (id, user_id, token_hash, expires_at)
-          VALUES (?, ?, ?, ?)
-        `).run(uuidv4(), user.id, tokenHash, expiresAt);
-
-        await recordAuditLog({
-          tenantId: user.tenant_id,
-          userId: user.id,
-          action: 'Password Reset Request',
-          entityType: 'User',
-          entityId: user.id,
-          metadata: { email: user.email },
-          ip: req.ip
-        });
-
-        await sendPasswordResetEmail({ email: user.email, name: user.full_name, token: rawToken });
-      }
+    if (!normEmail) {
+      return res.status(422).json({
+        success: false,
+        message: 'A valid email address is required.',
+        data: null,
+        request_id: req.requestId
+      });
     }
+
+    const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(normEmail);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'No account found with this email address.',
+        data: null,
+        request_id: req.requestId
+      });
+    }
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+
+    await db.prepare(`
+      INSERT INTO password_resets (id, user_id, token_hash, expires_at)
+      VALUES (?, ?, ?, ?)
+    `).run(uuidv4(), user.id, tokenHash, expiresAt);
+
+    await recordAuditLog({
+      tenantId: user.tenant_id,
+      userId: user.id,
+      action: 'Password Reset Request',
+      entityType: 'User',
+      entityId: user.id,
+      metadata: { email: user.email },
+      ip: req.ip
+    });
+
+    await sendPasswordResetEmail({ email: user.email, name: user.full_name, token: rawToken });
 
     return res.json({
       success: true,
-      message: 'If an account exists, reset instructions have been sent.',
+      message: `Password reset instructions have been sent to ${user.email}.`,
       data: null,
       request_id: req.requestId
     });
