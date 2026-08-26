@@ -1,8 +1,8 @@
-// RestroVico Production API Client - Cache-busting build v1.0.4
+// RestroVico Production API Client - Same-origin Proxy Architecture
 const API_BASE = import.meta.env.VITE_API_URL || (
   window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:4000/api/v1'
-    : 'https://restrovico-api-production.up.railway.app/api/v1'
+    : '/api/v1'
 );
 
 function getAuthHeader() {
@@ -19,7 +19,6 @@ async function request(endpoint, options = {}) {
   };
 
   const config = {
-    mode: 'cors',
     ...options,
     headers
   };

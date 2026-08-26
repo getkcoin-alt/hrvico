@@ -1,1 +1,8 @@
-{ "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }
+{
+  "rewrites": [
+    {
+      "source": "/api/v1/:path*",
+      "destination": "https://restrovico-api-production.up.railway.app/api/v1/:path*"
+    }
+  ]
+}
