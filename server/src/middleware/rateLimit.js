@@ -1,10 +1,8 @@
 import rateLimit from 'express-rate-limit';
 
-const isDevOrTest = process.env.NODE_ENV !== 'production';
-
 export const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isDevOrTest ? 1000 : 10,
+  max: 100, // Allow up to 100 login attempts per 15 mins
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -16,7 +14,7 @@ export const loginLimiter = rateLimit({
 
 export const forgotPasswordLimiter = rateLimit({
   windowMs: 30 * 60 * 1000,
-  max: isDevOrTest ? 1000 : 5,
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -28,7 +26,7 @@ export const forgotPasswordLimiter = rateLimit({
 
 export const resendVerificationLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isDevOrTest ? 1000 : 5,
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   message: {

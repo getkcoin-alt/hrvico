@@ -18,6 +18,7 @@ async function request(endpoint, options = {}) {
   };
 
   const config = {
+    mode: 'cors',
     ...options,
     headers
   };
@@ -36,7 +37,7 @@ async function request(endpoint, options = {}) {
     return data;
   } catch (err) {
     if (!err.status) {
-      err.message = err.message || 'Network error. Please check backend connection.';
+      err.message = err.message || 'Network error / Unable to connect to backend server.';
     }
     throw err;
   }

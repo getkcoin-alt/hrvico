@@ -41,8 +41,11 @@ initDb();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// Security & Middleware
-app.use(helmet());
+// Configure Helmet for Cross-Origin REST API compatibility
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginOpenerPolicy: false
+}));
 
 // Dynamic CORS configuration allowing credentials & browser requests
 app.use(cors({
