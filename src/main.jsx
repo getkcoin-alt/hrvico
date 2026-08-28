@@ -129,6 +129,8 @@ function Auth({ onLoginSuccess }) {
     }
   };
 
+  const emailOnly = screen === 'signup' || screen === 'forgot';
+
   const title = {
     login: ['Welcome back', 'Sign in to continue managing your restaurants.'],
     signup: ['Create your owner account', 'Start with a secure foundation for your restaurant group.'],
@@ -191,13 +193,13 @@ function Auth({ onLoginSuccess }) {
                 </>
               )}
 
-              <Field label={screen === 'forgot' ? 'Email address' : 'Email or mobile'}>
+              <Field label={emailOnly ? 'Email address' : 'Email or mobile'}>
                 <input
                   required
-                  type={screen === 'forgot' ? 'email' : 'text'}
+                  type={emailOnly ? 'email' : 'text'}
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder={screen === 'forgot' ? 'you@example.com' : 'you@example.com or +91…'}
+                  placeholder={emailOnly ? 'you@example.com' : 'you@example.com or +91…'}
                 />
               </Field>
 
